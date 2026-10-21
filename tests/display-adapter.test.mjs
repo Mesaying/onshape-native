@@ -4,7 +4,7 @@ import {webcrypto} from 'node:crypto';
 import {displayCommand} from '../extension/display-adapter.js';
 const target={did:'a'.repeat(24),wid:'b'.repeat(24),eid:'c'.repeat(24)}, micro='d'.repeat(24);
 const identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
-function setup({parentHidden=false,offline=false}={}) {
+function setup({parentHidden=false,offline=false,current=false}={}) {
  globalThis.crypto ||= webcrypto;globalThis.location={origin:'https://cad.onshape.com',pathname:`/documents/${target.did}/w/${target.wid}/e/${target.eid}`,search:''};
  const sent=[],transforms=new Map([['part',identity.slice()]]);
  let revision=micro,closed=offline;
@@ -15,7 +15,7 @@ function setup({parentHidden=false,offline=false}={}) {
   getCanBeHidden:()=>true,getOccurrence:()=>({path}),getFeatureId:()=>feature_id,getVisibility:()=>node.hidden?1:2});
  const items=[makeItem(part,['part']),makeItem(connector,['part'],connector.featureId),makeItem(mate,[],'mate')];
  const tree={isValid:true,pathToNodes:new Map([['',root],['part',part],['part.connector',connector],['mate',mate]])};
- const classes={z_V:{VISIBLE:2,HIDDEN:1}};
+ const classes={CJP:()=>{},D0n:()=>{},z_V:{VISIBLE:2,HIDDEN:1}};
  for (const name of ['assembly.GBTOccurrence','assembly.GBTFeatureReference','ui.assembly.GBTUiBatchVisibilityChange','ui.assembly.GBTUiChangeOccurrenceVisibility','ui.assembly.GBTUiSetFeatureOccurrenceVisibility','assembly.GBTUiAssemblyAnimateMateRequest']) {
   classes[name]=class {
    constructor(){this.occurrenceVisibilityCalls=[];this.featureOccurrenceVisibilityCalls=[];this.mate={};this.numFrames={};this.startValue={};this.endValue={};}
@@ -39,8 +39,9 @@ function setup({parentHidden=false,offline=false}={}) {
    return {};
   }}};
  const modules={27940:classes,3392:{GI:{getOpenDocumentController:()=>controller}},64725:{V:{itemsByPath:new Map(items.map((v,i)=>[String(i),v]))}}};
+ if(current) {modules[96402]=modules[27940];modules[87539]=modules[3392];modules[65443]=modules[64725];delete modules[27940];delete modules[3392];delete modules[64725];}
  const chunks=[];chunks.push=value=>{Array.prototype.push.call(chunks,value);value[2](id=>modules[id]);};globalThis.webpackChunkNewton=chunks;
- return {sent,connector,mate,transforms,setRevision:v=>revision=v,setClosed:v=>closed=v};
+ return {modules,sent,connector,mate,transforms,setRevision:v=>revision=v,setClosed:v=>closed=v};
 }
 const run=(operation,args={},extra={})=>displayCommand({kind:'display',target,operation,args,expected_microversion:micro,...extra});
 const fingerprint=state=>state.rows.map(r=>[r.tree_path,r.visibility,r.parent_hidden,r.suppressed,r.suppressed_by_parent]);
@@ -75,4 +76,16 @@ test('motion refuses restoring an old pose over a newer model revision',async()=
 });
 test('wrong URL fails before any editor operation',async()=>{
  const env=setup();location.pathname='/documents/elsewhere';assert.match((await run('inspect')).error,/target navigated/);assert.equal(env.sent.length,0);
+});
+
+test('current captured frontend profile resolves display rows',async()=>{
+ setup({current:true});assert.equal((await run('inspect')).complete,true);
+});
+test('missing controller fails before display mutation with bootstrap diagnostic',async()=>{
+ const env=setup({current:true});env.modules[87539]={};
+ assert.match((await run('visibility')).error,/87539:controller-accessor-missing/);assert.equal(env.sent.length,0);
+});
+test('missing sidebar registry returns bounded diagnostic',async()=>{
+ const env=setup({current:true});env.modules[65443]={};
+ assert.match((await run('inspect')).error,/sidebar-registry-missing:65443/);assert.equal(env.sent.length,0);
 });

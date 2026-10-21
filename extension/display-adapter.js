@@ -6,11 +6,36 @@ export async function displayCommand(job) {
     const path = `/documents/${target.did}/w/${target.wid}/e/${target.eid}`;
     if (location.origin !== 'https://cad.onshape.com' || location.pathname !== path || new URLSearchParams(location.search).has('configuration'))
       throw new Error('Display target navigated or is configured. Use the exact unconfigured workspace tab.');
-    let req;
-    const chunks = globalThis.webpackChunkNewton;
-    if (!chunks) throw new Error('Onshape runtime unavailable.');
-    chunks.push([[`onshape_native_display_${crypto.randomUUID()}`], {}, r => {req = r;}]); chunks.pop();
-    const types = req(27940), controller = req(3392).GI.getOpenDocumentController();
+  // Verified profiles: original 1.221 trace and assets captured 2026-10-20.
+  // Keep this bootstrap identical in both injected functions (no worker closures).
+  let require;
+  const chunks = globalThis.webpackChunkNewton;
+  if (!Array.isArray(chunks)) throw new Error("Onshape webpack runtime unavailable; document may still be loading.");
+  const marker = `onshape_native_${crypto.randomUUID()}`;
+  chunks.push([[marker], {}, r => { require = r; }]);
+  if (chunks.at(-1)?.[0]?.[0] === marker) chunks.pop();
+  if (typeof require !== "function") throw new Error("Onshape webpack runtime is not initialized; wait for the editor.");
+  const profiles = [
+    {classes:96402, controller:87539, registry:49857, sidebar:65443},
+    {classes:27940, controller:3392, registry:45867, sidebar:64725}
+  ];
+  let profile, classes, controllerType;
+  const failures = [];
+  for (const candidate of profiles) {
+    // Never scan or execute arbitrary modules when a known profile fails.
+    let types, accessor;
+    try { types = require(candidate.classes); accessor = require(candidate.controller)?.GI; }
+    catch { failures.push(`${candidate.controller}:module-unavailable`); continue; }
+    if (typeof types?.CJP !== "function" || typeof types?.D0n !== "function") {
+      failures.push(`${candidate.classes}:message-classes-missing`); continue;
+    }
+    if (typeof accessor?.getOpenDocumentController !== "function") {
+      failures.push(`${candidate.controller}:controller-accessor-missing`); continue;
+    }
+    profile = candidate; classes = types; controllerType = accessor; break;
+  }
+  if (!profile) throw new Error(`Unsupported Onshape frontend build [runtime-bootstrap: ${failures.join(", ")}]. Re-capture DevTools evidence.`);
+    const types = classes, controller = controllerType.getOpenDocumentController();
     if (controller?.getActiveElementTabId() !== target.eid) throw new Error('Active editor differs from target.');
     const model = controller.documentModel.get('activeElement');
     const micro = () => {const v = controller.documentModel.get('microversionId'); return typeof v === 'string' ? v : v?.theId;};
@@ -43,7 +68,11 @@ export async function displayCommand(job) {
       } finally {clearTimeout(timer);}
     };
     const equal = (a,b) => JSON.stringify(a) === JSON.stringify(b);
-    const nodeMap = () => req(64725).V;
+    const nodeMap = () => {
+      const registry = require(profile.sidebar)?.V;
+      if (!(registry?.itemsByPath instanceof Map)) throw new Error(`Unsupported Onshape frontend build [sidebar-registry-missing:${profile.sidebar}].`);
+      return registry;
+    };
     const getRows = () => {
       const tree = model.definition?.assemblyTree;
       if (!tree?.isValid || !(tree.pathToNodes instanceof Map)) throw new Error('Assembly display tree is not ready.');

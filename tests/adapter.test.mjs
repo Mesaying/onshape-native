@@ -15,7 +15,7 @@ class Location {
   getMessageName(){return 'tree.GBTInsertionLocation';}
 }
 let sent=[];
-function setup(definition){
+function setup(definition, current=false){
   globalThis.crypto ||= webcrypto;
   globalThis.location = {origin:'https://cad.onshape.com',pathname:`/documents/${target.did}/w/${target.wid}/e/${target.eid}`};
   sent=[];
@@ -24,8 +24,10 @@ function setup(definition){
     documentClientCache:{getModelTreeState:()=>({diffableModelTree:{getRoot:()=>({children:[]})}})},
     elementConnection:{callAndPromise:async m=>{sent.push(m);return {errorEnum:0};}}};
   const modules = {27940:{CJP:()=>{},D0n:()=>{},Folder,Location},3392:{GI:{getOpenDocumentController:()=>controller}}};
+  if (current) { modules[96402]=modules[27940]; modules[87539]=modules[3392]; delete modules[27940]; delete modules[3392]; }
   const chunks=[];chunks.push=value=>{Array.prototype.push.call(chunks,value);value[2](id=>modules[id]);};
   globalThis.webpackChunkNewton=chunks;
+  return modules;
 }
 test('exact target and revision checked before mutation',async()=>{
   setup();const job={kind:'native',target,command:'partstudiofolders.GBTUiCreateFolder',body:{folderName:'Test'},expected_microversion:'e'.repeat(24)};
@@ -84,4 +86,19 @@ test('extension GET observes only its own redirect Location and removes the list
   };
   const result=await restGet({kind:'rest',method:'GET',path:'/api/v17/export'});
   assert.equal(result.download_redirect,'https://sample.s3.amazonaws.com/sample');assert.ok(removed);assert.ok(!JSON.stringify(result).includes('must-not-escape'));
+});
+
+test('current captured frontend profile resolves state', async()=>{
+  setup(undefined,true);assert.equal((await pageCommand({kind:'state',target})).microversion,micro);
+});
+test('missing controller export and accessor fail before native RPC',async()=>{
+  for (const value of [{}, {GI:{}}]) {
+    const modules=setup(undefined,true);modules[87539]=value;
+    const result=await pageCommand({kind:'native',target,command:'partstudiofolders.GBTUiCreateFolder',body:{},expected_microversion:micro});
+    assert.match(result.error,/87539:controller-accessor-missing/);assert.equal(sent.length,0);
+  }
+});
+test('missing message classes fail before native RPC',async()=>{
+  const modules=setup(undefined,true);delete modules[96402].CJP;
+  assert.match((await pageCommand({kind:'state',target})).error,/96402:message-classes-missing/);assert.equal(sent.length,0);
 });
