@@ -1,0 +1,6 @@
+interface:
+  display_name: "GitHub Issue Fixer"
+  short_description: "Verify open issues and create tested fix PRs"
+  default_prompt: "Use $github-issue-fixer to review open issues and pull requests, verify reported bugs, and create tested fix PRs for valid issues not already covered."
+policy:
+  allow_implicit_invocation: true
