@@ -1,12 +1,16 @@
 """Kernel-side measurements: geometry, not pixels, is the source of truth."""
+import re
 
-SUMMARY_SCRIPT = '''function(context is Context, queries) {
+SOLID_ROWS = '''
     const bodies = evaluateQuery(context, qBodyType(qEverything(EntityType.BODY), BodyType.SOLID));
     var rows = [];
     for (var body in bodies) {
         const bounds = evBox3d(context, { "topology" : body, "tight" : true });
+        var name = "";
+        try silent { name = getProperty(context, { "entity" : body, "propertyType" : PropertyType.NAME }); }
         rows = append(rows, {
             "id" : transientQueriesToStrings([body])[0],
+            "name" : name,
             "min_mm" : bounds.minCorner / millimeter,
             "max_mm" : bounds.maxCorner / millimeter,
             "size_mm" : (bounds.maxCorner - bounds.minCorner) / millimeter,
@@ -15,8 +19,40 @@ SUMMARY_SCRIPT = '''function(context is Context, queries) {
             "edges" : size(evaluateQuery(context, qOwnedByBody(body, EntityType.EDGE)))
         });
     }
-    return rows;
-}'''
+'''
+
+SUMMARY_SCRIPT = 'function(context is Context, queries) {' + SOLID_ROWS + '    return rows;\n}'
+
+FEATURE_ID = re.compile(r"^[A-Za-z0-9_]{1,64}$")
+VARIABLE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+
+
+def report_script(feature_ids, variables=()):
+    """One evaluate: per-feature errors/warnings, solids summary and published variables (setVariable)."""
+    from .client import OnshapeError
+    ids = [f for f in dict.fromkeys(feature_ids) if isinstance(f, str) and FEATURE_ID.match(f)]
+    names = list(dict.fromkeys(variables or ()))
+    if len(names) > 12 or any(not isinstance(n, str) or not VARIABLE.match(n) for n in names):
+        raise OnshapeError("variables: up to 12 FeatureScript identifiers.")
+    literal = lambda items: "[" + ", ".join('"' + x + '"' for x in items) + "]"
+    return ('function(context is Context, queries) {\n'
+            '    var problems = {};\n'
+            '    for (var fid in ' + literal(ids) + ') {\n'
+            '        var err = undefined;\n'
+            '        var warn = undefined;\n'
+            '        try silent { err = getFeatureError(context, makeId(fid)); }\n'
+            '        try silent { warn = getFeatureWarning(context, makeId(fid)); }\n'
+            '        if (err != undefined)\n'
+            '            problems[fid] = { "status" : "ERROR", "message" : toString(err) };\n'
+            '        else if (warn != undefined)\n'
+            '            problems[fid] = { "status" : "WARNING", "message" : toString(warn) };\n'
+            '    }' + SOLID_ROWS +
+            '    var published = {};\n'
+            '    for (var vname in ' + literal(names) + ') {\n'
+            '        try silent { published[vname] = getVariable(context, vname); }\n'
+            '    }\n'
+            '    return { "problems" : problems, "solids" : rows, "variables" : published, "checked" : ' + str(len(ids)) + ' };\n'
+            '}')
 
 
 def decode_fs(value):

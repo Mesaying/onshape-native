@@ -97,11 +97,13 @@ def test_camera_ack_retains_restoration_id_and_full_state(tmp_path):
     assert 'camera' not in result
 
 
-async def test_mcp_contract_stays_35_tools_with_one_expander(tmp_path,monkeypatch):
+async def test_mcp_contract_stays_37_tools_with_one_expander(tmp_path,monkeypatch):
     from onshape_native import server
     monkeypatch.setattr(server,'service',SimpleNamespace(store=Store(tmp_path)))
     tools=await server.mcp.list_tools()
-    assert len(tools)==35
+    assert len(tools)==37
+    assert any(t.name=='featurestudio_patch' for t in tools)
+    assert any(t.name=='export' for t in tools)
     assert sum(t.name=='artifact_page' for t in tools)==1
     result=json.loads(server.search_commands('create an assembly'))
     expanded=json.loads(server.artifact_page(result['artifact'],'/manual_fallback'))

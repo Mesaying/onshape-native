@@ -31,7 +31,7 @@ export async function restGet(job) {
     return {status:307,download_redirect:new URL(redirect,url).href};
   }
   if (response.status>=300 && response.status<400 && response.status!==304) return {status:response.status,download_redirect:response.headers.get('location')};
-  const response_headers=Object.fromEntries(['etag','content-disposition','content-range','retry-after','x-ratelimit-remaining'].filter(k=>response.headers.has(k)).map(k=>[k,response.headers.get(k)]));
+  const response_headers=Object.fromEntries(['etag','content-disposition','content-range','retry-after','x-rate-limit-remaining','x-ratelimit-remaining'].filter(k=>response.headers.has(k)).map(k=>[k,response.headers.get(k)]));
   const reader=response.body?.getReader();const chunks=[];let length=0;
   if (reader) while(true){const {done,value}=await reader.read();if(done)break;length+=value.length;if(length>64*1024*1024){await reader.cancel();throw new Error('Response exceeds 64 MiB.');}chunks.push(value);}
   const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}

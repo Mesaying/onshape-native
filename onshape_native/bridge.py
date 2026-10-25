@@ -32,7 +32,7 @@ def validate_job(job):
     if not isinstance(job, dict):
         raise BridgeError("Expected a JSON object.")
     kind = job.get("kind")
-    if not isinstance(kind, str) or kind not in {"rest", "native", "state", "schema", "tabs", "open", "ui_inspect", "ui_action", "display"}:
+    if not isinstance(kind, str) or kind not in {"rest", "native", "state", "microversion", "schema", "tabs", "open", "ui_inspect", "ui_action", "display"}:
         raise BridgeError("Unknown command kind.")
     if kind == "rest":
         path = job.get("path", "")
@@ -55,7 +55,7 @@ def validate_job(job):
             raise BridgeError("Only If-None-Match and Range request headers are accepted.")
         if not isinstance(job.get("query", {}), dict):
             raise BridgeError("Query must be an object.")
-    if kind in {"native", "state", "schema", "open", "ui_inspect", "ui_action", "display"}:
+    if kind in {"native", "state", "microversion", "schema", "open", "ui_inspect", "ui_action", "display"}:
         target = job.get("target", {})
         if not isinstance(target, dict) or set(target) != {"did", "wid", "eid"} or any(not isinstance(x, str) or not re.fullmatch(r"[a-f0-9]{24}", x) for x in target.values()):
             raise BridgeError("Native commands require exact did, wid, eid target IDs.")
@@ -298,7 +298,7 @@ def create_app(config=None):
             if result.get("error"):
                 return JSONResponse(result, 502)
             status = result.get("status", 200)
-            response_headers = {k:v for k,v in result.get("response_headers", {}).items() if k.lower() in {"etag", "content-disposition", "content-range", "retry-after", "x-ratelimit-remaining"}}
+            response_headers = {k:v for k,v in result.get("response_headers", {}).items() if k.lower() in {"etag", "content-disposition", "content-range", "retry-after", "x-ratelimit-remaining", "x-rate-limit-remaining"}}
             if status in {204,304}:
                 return Response(status_code=status, headers=response_headers)
             if result.get("encoding") == "base64":

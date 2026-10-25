@@ -47,7 +47,7 @@ export async function pageCommand(job) {
     const bytes = new Uint8Array(length); let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
     const contentType = response.headers.get("content-type") || "";
-    const response_headers = Object.fromEntries(["etag","content-disposition","content-range","retry-after","x-ratelimit-remaining"]
+    const response_headers = Object.fromEntries(["etag","content-disposition","content-range","retry-after","x-rate-limit-remaining","x-ratelimit-remaining"]
       .filter(key=>response.headers.has(key)).map(key=>[key,response.headers.get(key)]));
     if (response.status === 304) return {status:304,body:null,response_headers};
     if (!length) return {status: response.status, body: {}, response_headers};
@@ -94,6 +94,8 @@ export async function pageCommand(job) {
     const value = documentModel?.get("microversionId");
     return typeof value === "string" ? value : value?.theId || "";
   };
+  // Cheapest freshness probe: the open editor's revision, no model tree and no REST request.
+  if (job.kind === "microversion") return {target, microversion: getMicroversion(), connected: controller.connection?.isClosed?.() === false};
   // The serializer registry includes nested types absent from the public barrel,
   // e.g. partstudio.GBTPSOIdentity in material and assembly insertion payloads.
   const registry = require(profile.registry)?.E15;

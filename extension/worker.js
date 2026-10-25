@@ -3,10 +3,11 @@ import {restGet} from "./rest-get.js";
 import {tabContext} from "./tab-context.js";
 import {displayCommand} from "./display-adapter.js";
 import {BRIDGE_TOKEN} from "./local-config.js";
+import {createGate} from "./command-gate.js";
 
 let socket = null;
 let heartbeat = null;
-let inFlight = false;
+const gate = createGate();
 const BASE = "ws://127.0.0.1:8766/extension";
 
 async function settings() { return chrome.storage.local.get(["enabled"]); }
@@ -65,18 +66,8 @@ async function connect() {
       return;
     }
     if (message.type !== "command") return;
-    let result;
-    if (inFlight) result = {error: "Previous command still running; inspect state before continuing."};
-    else {
-      inFlight = true;
-      try {
-        result = await execute(message.job);
-        if (JSON.stringify(result).length > 96 * 1024 * 1024 - 1024) result = {error: "Result too large; inspect state and narrow the query."};
-      } catch (error) {
-        // No request headers, cookies, or stack dumps in bridge errors.
-        result = {error: String(error.message || "Page execution failed").slice(0, 500)};
-      } finally { inFlight = false; }
-    }
+    let result = await gate(message.job, execute);
+    if (JSON.stringify(result).length > 96 * 1024 * 1024 - 1024) result = {error: "Result too large; inspect state and narrow the query."};
     if (current.readyState === WebSocket.OPEN) current.send(JSON.stringify({type: "result", id: message.id, result}));
   };
   current.onclose = () => {

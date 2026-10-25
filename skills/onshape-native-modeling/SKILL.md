@@ -44,7 +44,8 @@ indicate similarity, not successful live execution.
 
 | Work | Normal tool sequence |
 |---|---|
-| Change an extrusion, fillet, sketch or other feature | `inspect_model` → `evaluate` → `feature_template` → `feature` → fresh inspection |
+| Change an extrusion, fillet, sketch or other feature | `inspect_model` → `evaluate` → `feature_template` → `feature` (returns a fresh snapshot) → one batched `evaluate` |
+| Iterate a custom FeatureScript feature | `featurestudio_patch` (Feature Studio budget) → one `evaluate` in the Part Studio |
 | Browse/copy/create/rename/move/delete tabs or document folders | `document_tree` → `document_edit` → verify returned tree |
 | Feature or assembly sidebar folders/order/suppression | `element_tree` → `sidebar_edit` → verify structure and model |
 | Assembly visibility, including inherited connectors | `display_state` → `set_visibility` → fresh `display_state` |
@@ -68,6 +69,27 @@ Console tracing code; honor the user's Network-only preference. Treat observed
 model changes as already executed. Native catalog entries marked `client-schema`
 are candidates, not tested recipes. Read evidence before invoking them.
 
+## Request budget
+
+Onshape rate-limits REST per endpoint in fixed windows and does not publish the numbers.
+All Part Studio calls (feature writes, `inspect_model`, `element_tree`, `evaluate`,
+tessellation, translations) behave as one budget, with Retry-After resets that can be hours
+away; Feature Studio and document calls are counted separately.
+
+- Watch `budget_low` in tool results and `bridge_status` budget (calls left per endpoint,
+  largest value seen, reset time). A blocked endpoint, or one at its reserve, fails locally
+  with "Nothing was sent". Spend the reserve only for something essential.
+- Edit several existing features in ONE `feature(action="edit")` call: it is one request.
+- `feature` returns a fresh snapshot: never inspect between writes. Pass `report=true` on the
+  last write (or `evaluate(preset="report", variables=[...])`) to get feature errors, solids
+  and published check variables in one request.
+- Reads pinned to a microversion (evaluate, tessellation, specs) are cached; repeats are free.
+  `feature_template` specs survive edits. `inspect_model(previous=...)` costs no request when
+  the open tab shows the same revision.
+- Export with `export(snapshot, "stl"|"step")`: one call, files on disk, watertight check.
+- For geometry you will iterate, prefer a custom FeatureScript feature: add it once, then
+  change it with `featurestudio_patch`; the Part Studio regenerates on its own.
+
 ## Edit and verify
 
 Before modeling, derive a short geometric acceptance contract from the request:
@@ -88,7 +110,7 @@ have backend operations. UI controls and native serializers can change with
 Onshape builds; report an actual unsupported operation rather than claiming
 every catalog candidate is verified.
 
-Refresh after writes. Check feature regeneration, exact dimensions/volume/body
+Verify after writes from the returned snapshot plus one batched `evaluate`. Check feature regeneration, exact dimensions/volume/body
 count, or assembly occurrence transforms/mates as appropriate. Weight requires
 material density and mass properties; volume alone is not mass. For organizational
 changes verify parent/order and unchanged geometry or transforms. Distinguish

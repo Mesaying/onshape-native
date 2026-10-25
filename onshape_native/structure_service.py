@@ -193,6 +193,31 @@ class Structures:
         return await self.s.client.command({"kind": "native", "target": {"did": target["did"], "wid": target["wvmid"], "eid": target["eid"]},
                                             "command": command, "body": body, "expected_microversion": micro})
 
+    async def after_feature_write(self, data, snapshot):
+        """Post-write tree from the write response plus the open editor tab: no REST request.
+        Returns None (caller falls back to capture_element) if the tab has not caught up."""
+        try:
+            snap = self.s.snapshot_data(snapshot)
+            features = self.s.store.read(snap["feature_artifact"])
+        except OnshapeError:
+            return None
+        micro = snap["microversion"]
+        for attempt in range(8):
+            try:
+                native = await self.ready_state(data["target"])
+            except OnshapeError:
+                return None
+            if native.get("microversion") == micro:
+                break
+            await asyncio.sleep(.25 * (attempt + 1))
+        else:
+            return None
+        rows, issues = feature_rows(native, features)
+        return {"kind": "onshape-structure", "url": data["url"], "target": data["target"], "microversion": micro,
+                "element": data.get("element"), "tree_kind": "partstudio", "features": features, "rows": rows,
+                "issues": issues, "complete": not issues, "rollback_index": features.get("rollbackIndex"), "native": native,
+                "verified_from": "feature write response + open editor tab (no REST request)"}
+
     @staticmethod
     def selected(data, node_id):
         matches = [r for r in data["rows"] if r["id"] == node_id]
@@ -467,7 +492,12 @@ class Structures:
             expected = {"moved_ids": node_ids, "parent_id": parent_id}
         else:
             if action != "create_feature" and (not node or node["kind"] != "feature"): raise OnshapeError("Select a feature node.")
-            model = await self.s.inspect(data["url"], geometry=False)
+            # fresh(data) above already proved data["microversion"] is current, and the snapshot holds the
+            # feature list at that revision: build the write snapshot locally instead of a REST inspect.
+            if data.get("features", {}).get("sourceMicroversion") == data["microversion"]:
+                model = {"snapshot": self.s.snapshot_from_features(data["url"], data["features"]), "microversion": data["microversion"]}
+            else:
+                model = await self.s.inspect(data["url"], geometry=False)
             if model["microversion"] != data["microversion"]: raise OnshapeError("Model changed before feature edit.")
             if action == "create_feature":
                 if not definition: raise OnshapeError("Supply a complete definition from the live feature specification.")
@@ -488,7 +518,10 @@ class Structures:
                 if "suppressed" in change: expected["suppressed"] = change["suppressed"]
         if command: result = await self.native(target, data["microversion"], command, body)
         result_artifact = self.s.store.put(result)["artifact"]
-        try: after = await self.capture_element(data["url"])
+        after = None
+        if not command and action != "delete_feature" and isinstance(result, dict) and result.get("snapshot"):
+            after = await self.after_feature_write(data, result["snapshot"])
+        try: after = after or await self.capture_element(data["url"])
         except OnshapeError as error:
             return {"action": action, "structure_verified": False, "expected": expected, "result_artifact": result_artifact,
                     "error": str(error), "outcome": "Write returned but verification failed; read a fresh element tree before retrying."}

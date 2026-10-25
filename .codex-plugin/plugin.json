@@ -1,6 +1,6 @@
 {
   "name": "onshape-native",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A reverse-engineered native Onshape API and MCP server with a browser extension.",
   "author": {
     "name": "Local developer"
