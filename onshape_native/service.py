@@ -12,6 +12,8 @@ from .geometry import FEATURE_ID, SUMMARY_SCRIPT, decode_fs, delta, feature_rows
 from .store import Store
 
 HEX24 = re.compile(r"[a-f0-9]{24}")
+# A feature that built: INFO/WARNING carry its own messages (e.g. a summary), they are not failures.
+BUILT = ("OK", "INFO", "WARNING")
 
 
 class Service:
@@ -283,7 +285,7 @@ class Service:
                     response = await self.call(op, path, body=body)
                 except OnshapeError as error:
                     unknown = self.outcome_unknown(target, error)
-                    out = {"completed": result, "stopped": True, "error": str(error),
+                    out = {"completed": result, "stopped": True, "error": str(error), "requests": len(result) + 1,
                            "next": ("The last write's outcome is unknown: inspect_model(url) without previous before continuing; "
                                     if unknown else "Inspect current state before continuing; ") + "completed changes remain."}
                     if result:
@@ -297,8 +299,8 @@ class Service:
                 if micro and not response.get("microversionSkew"):
                     self.fold(after, response, action)
                     self.remember(target["did"], target["wvmid"], micro)
-                if not micro or response.get("microversionSkew") or response.get("featureState", {}).get("featureStatus") != "OK":
-                    out = {"completed": result, "stopped": True, "next": "Inspect regeneration errors; do not replay the batch."}
+                if not micro or response.get("microversionSkew") or response.get("featureState", {}).get("featureStatus") not in BUILT:
+                    out = {"completed": result, "stopped": True, "requests": len(result), "next": "Inspect regeneration errors; do not replay the batch."}
                     if micro and not response.get("microversionSkew"):
                         out["snapshot"] = self.snapshot_from_features(data["url"], after, data)
                     return out
@@ -365,7 +367,7 @@ class Service:
         out = {"completed": completed, "microversion": micro, "requests": 1, "batched": True, "response": artifact,
                "snapshot": self.snapshot_from_features(data["url"], after, data),
                "next": "One updateFeatures request applied all edits. Downstream features are UNVERIFIED until a report or inspect."}
-        bad = [c["id"] for c in completed if (c["state"] or {}).get("featureStatus") not in ("OK", "UNVERIFIED", None)]
+        bad = [c["id"] for c in completed if (c["state"] or {}).get("featureStatus") not in BUILT + ("UNVERIFIED", None)]
         if bad:
             out["next"] = f"Edits applied, but {', '.join(bad)} did not regenerate cleanly. Fix forward; do not replay the batch."
         return out

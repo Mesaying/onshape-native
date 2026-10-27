@@ -362,3 +362,21 @@ def test_duplicate_part_names_get_distinct_files():
     from onshape_native.export import stl_files
     names = [f[0] for f in stl_files([tetra("Part 1"), dict(tetra("Part/1"), id="JHK")])]
     assert names == ["Part_1.stl", "Part_1_JHK.stl"]
+
+
+async def test_info_status_does_not_stop_a_multi_feature_add(tmp_path, monkeypatch):
+    s = service(tmp_path, monkeypatch)
+    snap = s.snapshot_from_features(URL, raw_features())
+    calls = []
+
+    async def call(operation, path=None, query=None, body=None):
+        calls.append(operation)
+        status = "INFO" if len(calls) == 1 else "ERROR"
+        return {"feature": dict(body["feature"], featureId="N" + str(len(calls))), "featureState": {"featureStatus": status},
+                "sourceMicroversion": MV2 if len(calls) == 1 else MV3}
+    s.call = call
+    out = await s.feature(snap, "add", [{"featureType": "stoneT4", "name": "Stone", "parameters": []},
+                                         {"featureType": "runChecks", "name": "Checks", "parameters": []},
+                                         {"featureType": "extrude", "name": "Never", "parameters": []}])
+    assert calls == ["addPartStudioFeature", "addPartStudioFeature"]      # INFO continues, ERROR stops
+    assert out["stopped"] and out["requests"] == 2
